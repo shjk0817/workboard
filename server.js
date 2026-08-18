@@ -433,15 +433,19 @@ app.delete('/api/files/:id', requireAuth, (req, res) => {
 /* ---------------- GitHub project cards ---------------- */
 
 app.get('/api/githubs', (req, res) => {
-  const list = DB.githubs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  // 迁移旧数据：单 cover 转为 covers 数组
+  const showAll = req.query.all === '1';
+  let list = DB.githubs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  // 迁移旧数据：单 cover 转为 covers 数组，补 enabled 字段
   for (const g of list) {
     if (!g.covers) g.covers = [];
     if (g.cover) {
       if (!g.covers.some(c => c.stored === g.cover.stored)) g.covers.push(g.cover);
       g.cover = null;
     }
+    if (g.enabled === undefined) g.enabled = true;
   }
+  // 展示页：仅返回已启用的卡片
+  if (!showAll) list = list.filter(g => g.enabled !== false);
   res.json(list);
 });
 
@@ -458,6 +462,7 @@ app.post('/api/githubs', requireAuth, async (req, res) => {
     language: String(language || '').trim().slice(0, 30),
     cover: null,
     covers: [],
+    enabled: true,
     createdAt: nowIso()
   };
   await autoFillGithub(item, { stars });
@@ -590,6 +595,49 @@ app.delete('/api/githubs/:id/covers/:index', requireAuth, (req, res) => {
   try { fs.unlinkSync(path.join(UPLOAD_DIR, removed.stored)); } catch (_) {}
   saveDb(DB);
   res.json(g);
+});
+
+// 启用/禁用卡片：PUT /api/githubs/:id/toggle
+app.put('/api/githubs/:id/toggle', requireAuth, (req, res) => {
+  const g = DB.githubs.find(x => x.id === req.params.id);
+  if (!g) return res.status(404).json({ error: '不存在' });
+  g.enabled = g.enabled === false ? true : false;
+  saveDb(DB);
+  res.json(g);
+});
+
+// 批量添加所有仓库为卡片：POST /api/github-repos/batch
+app.post('/api/github-repos/batch', requireAuth, async (req, res) => {
+  const key = 'repos:' + GITHUB_USER;
+  const cached = ghCache[key];
+  if (!cached || !cached.v || !cached.v.repos) {
+    return res.status(400).json({ error: '请先刷新仓库列表' });
+  }
+  const existing = new Set(DB.githubs.map(g => {
+    const s = (g.repo || '').replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '').toLowerCase();
+    return s;
+  }));
+  let added = 0;
+  for (const r of cached.v.repos) {
+    const full = (r.full_name || '').toLowerCase();
+    if (existing.has(full)) continue;
+    DB.githubs.push({
+      id: uid(),
+      title: r.name,
+      repo: r.html_url || '',
+      desc: r.description || '',
+      stars: r.stars || 0,
+      language: r.language || '',
+      covers: [],
+      cover: null,
+      enabled: true,
+      createdAt: nowIso()
+    });
+    existing.add(full);
+    added++;
+  }
+  saveDb(DB);
+  res.json({ ok: true, added });
 });
 
 /* ---------------- Activity (heatmap) ---------------- */

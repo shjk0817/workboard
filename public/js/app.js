@@ -18,7 +18,8 @@ const API = {
   upload: '/api/upload',
   githubs: '/api/githubs',
   uploadCover: '/api/upload-cover',
-  githubRepos: '/api/github-repos'
+  githubRepos: '/api/github-repos',
+  githubBatch: '/api/github-repos/batch'
 };
 
 const state = {
@@ -160,13 +161,15 @@ function renderGithubs() {
     const thumbsHtml = EDIT_MODE && covers.length > 0 ? `
       <div class="gh-covers-manage">${covers.map((c, i) => `
         <div class="cover-thumb"><img src="${esc(c.url)}" alt="" /><button class="cover-del" data-gid="${g.id}" data-cidx="${i}" title="删除">×</button></div>`).join('')}</div>` : '';
+    const disabled = g.enabled === false;
     const actions = EDIT_MODE ? `
         <div class="gh-actions">
           <button type="button" class="btn btn-ghost btn-sm" data-act="edit" data-id="${g.id}">编辑</button>
+          <button type="button" class="btn btn-sm ${disabled ? 'btn-primary' : 'btn-ghost'}" data-act="toggle" data-id="${g.id}">${disabled ? '启用' : '停用'}</button>
           <button type="button" class="btn btn-danger btn-sm" data-act="del" data-id="${g.id}">删除</button>
         </div>` : '';
     return `
-    <div class="gh-card" data-gid="${g.id}">
+    <div class="gh-card${disabled ? ' gh-disabled' : ''}" data-gid="${g.id}">
       ${coverHtml}
       <div class="gh-body">
         <a class="gh-title" href="${esc(g.repo) || '#'}" target="_blank" rel="noopener">${esc(g.title)} ↗</a>
@@ -576,9 +579,10 @@ function renderFiles() {
    数据加载
    ============================================================ */
 async function loadData() {
+  const ghUrl = PAGE === 'manage' ? API.githubs + '?all=1' : API.githubs;
   const [stats, arrangements, projects, files, activity, githubs] = await Promise.all([
     fetchJSON(API.stats), fetchJSON(API.arrangements), fetchJSON(API.projects),
-    fetchJSON(API.files), fetchJSON(API.activity), fetchJSON(API.githubs)
+    fetchJSON(API.files), fetchJSON(API.activity), fetchJSON(ghUrl)
   ]);
   state.stats = stats;
   state.arrangements = arrangements;
@@ -803,6 +807,23 @@ function bindManageEvents() {
     btn.disabled = false;
     toast('已刷新', 'ok');
   });
+  // 批量添加所有仓库
+  $('#repoBatchAdd').addEventListener('click', async () => {
+    if (!confirm('将 shjk0817 的所有公开仓库批量添加为卡片？')) return;
+    const btn = $('#repoBatchAdd');
+    btn.textContent = '添加中…';
+    btn.disabled = true;
+    try {
+      const r = await apiJson(API.githubBatch, 'POST', {});
+      toast(`已添加 ${r.added} 个仓库 🚀`, 'ok');
+      await loadData();
+      await loadRepos();
+    } catch (err) {
+      if (err.status === 401) sessionExpired(); else toast(err.message, 'err');
+    }
+    btn.textContent = '批量添加全部';
+    btn.disabled = false;
+  });
   // 语言自动识别：仓库输入框改完即从 GitHub 拉取主语言 / Star / 描述
   $('#ghRepo').addEventListener('change', async () => {
     const repo = $('#ghRepo').value.trim();
@@ -828,6 +849,10 @@ function bindManageEvents() {
         if (!confirm('删除该 GitHub 项目卡片？')) return;
         await fetchJSON('/api/githubs/' + id, { method: 'DELETE' });
         toast('已删除', 'ok');
+      } else if (btn.dataset.act === 'toggle') {
+        const g = state.githubs.find(x => x.id === id);
+        await apiJson(`/api/githubs/${id}/toggle`, 'PUT', {});
+        toast(g.enabled === false ? '已启用' : '已停用', 'ok');
       } else if (btn.dataset.act === 'edit') {
         const g = state.githubs.find(x => x.id === id);
         state.editingGithubId = g.id;

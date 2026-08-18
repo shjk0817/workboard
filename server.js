@@ -552,12 +552,12 @@ app.delete('/api/githubs/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// 封面上传：支持多图，追加到 covers 数组（multipart 字段 file + githubId）
-app.post('/api/upload-cover', requireAuth, upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: '未收到封面文件' });
+// 封面上传：支持多图批量上传，追加到 covers 数组（multipart 字段 files + githubId）
+app.post('/api/upload-cover', requireAuth, upload.array('files', 10), (req, res) => {
+  if (!req.files || req.files.length === 0) return res.status(400).json({ error: '未收到文件' });
   const g = DB.githubs.find(x => x.id === String(req.body.githubId || ''));
   if (!g) {
-    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    for (const f of req.files) { try { fs.unlinkSync(f.path); } catch (_) {} }
     return res.status(400).json({ error: 'GitHub 项目卡片不存在' });
   }
   if (!g.covers) g.covers = [];
@@ -566,15 +566,16 @@ app.post('/api/upload-cover', requireAuth, upload.single('file'), (req, res) => 
     if (!g.covers.some(c => c.stored === g.cover.stored)) g.covers.push(g.cover);
     g.cover = null;
   }
-  const entry = {
-    stored: req.file.filename,
-    url: '/files/' + req.file.filename,
-    name: req.file.originalname,
-    mime: req.file.mimetype || 'image/png',
-    size: req.file.size,
-    createdAt: nowIso()
-  };
-  g.covers.push(entry);
+  for (const f of req.files) {
+    g.covers.push({
+      stored: f.filename,
+      url: '/files/' + f.filename,
+      name: f.originalname,
+      mime: f.mimetype || 'image/png',
+      size: f.size,
+      createdAt: nowIso()
+    });
+  }
   saveDb(DB);
   res.json(g);
 });

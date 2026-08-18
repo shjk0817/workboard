@@ -154,9 +154,9 @@ function renderGithubs() {
              <button class="gallery-arrow next" data-gid="${g.id}" data-dir="1" aria-label="下一张">›</button>
              <div class="gallery-nav">${covers.map((_, i) => `<span class="g-dot${i === 0 ? ' active' : ''}" data-idx="${i}"></span>`).join('')}</div>
              <span class="cover-count">${covers.length} 张</span>` : ''}
-           ${EDIT_MODE ? `<label class="gh-cover-upload" title="上传截图"><input type="file" accept="image/*" hidden data-cover="${g.id}" /><span>📷</span></label>` : ''}
+           ${EDIT_MODE ? `<label class="gh-cover-upload" title="上传截图（可多选）"><input type="file" accept="image/*" multiple hidden data-cover="${g.id}" /><span>📷</span></label>` : ''}
          </div>`
-      : `<div class="gh-cover noimg"><span class="octo-logo">🐙</span>${EDIT_MODE ? `<label class="gh-cover-upload" title="上传截图"><input type="file" accept="image/*" hidden data-cover="${g.id}" /><span>📷 上传截图</span></label>` : ''}</div>`;
+      : `<div class="gh-cover noimg"><span class="octo-logo">🐙</span>${EDIT_MODE ? `<label class="gh-cover-upload" title="上传截图（可多选）"><input type="file" accept="image/*" multiple hidden data-cover="${g.id}" /><span>📷 上传截图</span></label>` : ''}</div>`;
     const thumbsHtml = EDIT_MODE && covers.length > 0 ? `
       <div class="gh-covers-manage">${covers.map((c, i) => `
         <div class="cover-thumb"><img src="${esc(c.url)}" alt="" /><button class="cover-del" data-gid="${g.id}" data-cidx="${i}" title="删除">×</button></div>`).join('')}</div>` : '';
@@ -236,28 +236,55 @@ function openLightbox(gid, startIdx) {
   document.addEventListener('keydown', onKey);
 }
 
-/* ---------- Gallery navigation on card hover ---------- */
-function bindGalleryNav() {
-  document.querySelectorAll('.gh-cover.has-gallery').forEach(cover => {
-    const gid = cover.dataset.gid;
-    const g = state.githubs.find(x => x.id === gid);
-    if (!g) return;
-    const covers = (g.covers && g.covers.length) ? g.covers : (g.cover ? [g.cover] : []);
-    let idx = 0;
-    const img = cover.querySelector('.gallery-img');
-    const dots = cover.querySelectorAll('.g-dot');
-    const update = () => {
-      if (img) img.src = covers[idx].url;
+/* ---------- Gallery navigation + lightbox (event delegation) ---------- */
+function initGalleryDelegation() {
+  const grid = $('#githubGrid');
+  if (!grid || grid.dataset.galleryBound) return;
+  grid.dataset.galleryBound = '1';
+
+  grid.addEventListener('click', (e) => {
+    // Gallery arrow click
+    const arrow = e.target.closest('.gallery-arrow');
+    if (arrow) {
+      e.stopPropagation();
+      const gid = arrow.dataset.gid;
+      const dir = parseInt(arrow.dataset.dir, 10);
+      const g = state.githubs.find(x => x.id === gid);
+      if (!g) return;
+      const covers = (g.covers && g.covers.length) ? g.covers : (g.cover ? [g.cover] : []);
+      const cover = arrow.closest('.gh-cover');
+      const img = cover.querySelector('.gallery-img');
+      const dots = cover.querySelectorAll('.g-dot');
+      let idx = parseInt(img?.dataset.idx || '0', 10);
+      idx = Math.max(0, Math.min(idx + dir, covers.length - 1));
+      if (img) { img.src = covers[idx].url; img.dataset.idx = idx; }
       dots.forEach((d, i) => d.classList.toggle('active', i === idx));
-    };
-    cover.querySelector('.gallery-arrow.prev')?.addEventListener('click', (e) => { e.stopPropagation(); if (idx > 0) { idx--; update(); } });
-    cover.querySelector('.gallery-arrow.next')?.addEventListener('click', (e) => { e.stopPropagation(); if (idx < covers.length - 1) { idx++; update(); } });
-    dots.forEach(d => d.addEventListener('click', (e) => { e.stopPropagation(); idx = parseInt(d.dataset.idx, 10); update(); }));
-    // Click on image opens lightbox
-    cover.addEventListener('click', (e) => {
-      if (e.target.closest('button') || e.target.closest('label')) return;
+      return;
+    }
+    // Dot click
+    const dot = e.target.closest('.g-dot');
+    if (dot) {
+      e.stopPropagation();
+      const idx = parseInt(dot.dataset.idx, 10);
+      const cover = dot.closest('.gh-cover');
+      const gid = cover.dataset.gid;
+      const g = state.githubs.find(x => x.id === gid);
+      if (!g) return;
+      const covers = (g.covers && g.covers.length) ? g.covers : (g.cover ? [g.cover] : []);
+      const img = cover.querySelector('.gallery-img');
+      const dots = cover.querySelectorAll('.g-dot');
+      if (img) { img.src = covers[idx].url; img.dataset.idx = idx; }
+      dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+      return;
+    }
+    // Cover image click → open lightbox
+    const cover = e.target.closest('.gh-cover');
+    if (cover && !e.target.closest('button') && !e.target.closest('label') && !e.target.closest('input')) {
+      const gid = cover.dataset.gid;
+      const img = cover.querySelector('.gallery-img');
+      const idx = parseInt(img?.dataset.idx || '0', 10);
       openLightbox(gid, idx);
-    });
+    }
   });
 }
 
@@ -570,7 +597,6 @@ async function loadData() {
 function renderAll() {
   renderStats();
   renderGithubs();
-  bindGalleryNav();
   renderHeatmap();
   renderArrangements();
   renderProjects();
@@ -598,6 +624,7 @@ async function loadStats() {
 function bindEvents() {
   const mc = $('#modalClose'); if (mc) mc.addEventListener('click', closeModal);
   const mm = $('#modalMask'); if (mm) mm.addEventListener('click', (e) => { if (e.target.id === 'modalMask') closeModal(); });
+  initGalleryDelegation();
   if (PAGE === 'manage') bindManageEvents();
 }
 
@@ -816,15 +843,17 @@ function bindManageEvents() {
   });
   $('#githubGrid').addEventListener('change', async (e) => {
     const input = e.target.closest('input[data-cover]');
-    if (!input || !input.files || !input.files[0]) return;
+    if (!input || !input.files || !input.files.length) return;
     const fd = new FormData();
-    fd.append('file', input.files[0]);
+    for (const f of input.files) fd.append('files', f);
     fd.append('githubId', input.dataset.cover);
     const span = input.closest('.gh-cover-upload').querySelector('span');
+    const count = input.files.length;
     if (span) span.textContent = '⏳';
+    input.value = '';
     try {
       await fetchJSON(API.uploadCover, { method: 'POST', body: fd });
-      toast('截图已上传 📷', 'ok');
+      toast(`${count} 张截图已上传 📷`, 'ok');
       await loadData();
     } catch (err) { if (err.status === 401) sessionExpired(); else toast(err.message, 'err'); return; }
     if (span) span.textContent = '📷';

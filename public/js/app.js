@@ -144,20 +144,29 @@ function renderGithubs() {
   if (!grid) return;
   $('#githubEmpty').classList.toggle('hidden', state.githubs.length > 0);
   grid.innerHTML = state.githubs.map(g => {
-    const up = EDIT_MODE ? `<label class="gh-cover-upload" title="上传软件截图作为封面">
-        <input type="file" accept="image/*" hidden data-cover="${g.id}" />
-        <span>📷 上传封面</span></label>` : '';
-    const coverHtml = (g.cover && g.cover.url)
-      ? `<div class="gh-cover">${up}<img src="${esc(g.cover.url)}" alt="封面"
-           onerror="this.closest('.gh-cover').classList.add('err');this.remove()"/></div>`
-      : `<div class="gh-cover noimg"><span class="octo-logo">🐙</span>${up}</div>`;
+    const covers = (g.covers && g.covers.length) ? g.covers : (g.cover ? [g.cover] : []);
+    const hasGallery = covers.length > 1;
+    const coverHtml = covers.length > 0
+      ? `<div class="gh-cover${hasGallery ? ' has-gallery' : ''}" data-gid="${g.id}">
+           <img class="gallery-img" src="${esc(covers[0].url)}" alt="封面" data-idx="0" />
+           ${hasGallery ? `
+             <button class="gallery-arrow prev" data-gid="${g.id}" data-dir="-1" aria-label="上一张">‹</button>
+             <button class="gallery-arrow next" data-gid="${g.id}" data-dir="1" aria-label="下一张">›</button>
+             <div class="gallery-nav">${covers.map((_, i) => `<span class="g-dot${i === 0 ? ' active' : ''}" data-idx="${i}"></span>`).join('')}</div>
+             <span class="cover-count">${covers.length} 张</span>` : ''}
+           ${EDIT_MODE ? `<label class="gh-cover-upload" title="上传截图"><input type="file" accept="image/*" hidden data-cover="${g.id}" /><span>📷</span></label>` : ''}
+         </div>`
+      : `<div class="gh-cover noimg"><span class="octo-logo">🐙</span>${EDIT_MODE ? `<label class="gh-cover-upload" title="上传截图"><input type="file" accept="image/*" hidden data-cover="${g.id}" /><span>📷 上传截图</span></label>` : ''}</div>`;
+    const thumbsHtml = EDIT_MODE && covers.length > 0 ? `
+      <div class="gh-covers-manage">${covers.map((c, i) => `
+        <div class="cover-thumb"><img src="${esc(c.url)}" alt="" /><button class="cover-del" data-gid="${g.id}" data-cidx="${i}" title="删除">×</button></div>`).join('')}</div>` : '';
     const actions = EDIT_MODE ? `
         <div class="gh-actions">
           <button type="button" class="btn btn-ghost btn-sm" data-act="edit" data-id="${g.id}">编辑</button>
           <button type="button" class="btn btn-danger btn-sm" data-act="del" data-id="${g.id}">删除</button>
         </div>` : '';
     return `
-    <div class="gh-card">
+    <div class="gh-card" data-gid="${g.id}">
       ${coverHtml}
       <div class="gh-body">
         <a class="gh-title" href="${esc(g.repo) || '#'}" target="_blank" rel="noopener">${esc(g.title)} ↗</a>
@@ -166,10 +175,90 @@ function renderGithubs() {
           ${g.language ? `<span class="gh-lang">${esc(g.language)}</span>` : ''}
         </div>
         ${g.desc ? `<p class="gh-desc">${esc(g.desc)}</p>` : ''}
+        ${thumbsHtml}
         ${actions}
       </div>
     </div>`;
   }).join('');
+}
+
+/* ---------- Lightbox ---------- */
+function openLightbox(gid, startIdx) {
+  const g = state.githubs.find(x => x.id === gid);
+  if (!g) return;
+  const covers = (g.covers && g.covers.length) ? g.covers : (g.cover ? [g.cover] : []);
+  if (!covers.length) return;
+  let idx = Math.max(0, Math.min(startIdx || 0, covers.length - 1));
+  const mask = document.createElement('div');
+  mask.className = 'lightbox-mask';
+  mask.innerHTML = `
+    <div class="lightbox-content">
+      <button class="lightbox-close" aria-label="关闭">✕</button>
+      ${covers.length > 1 ? '<button class="lightbox-arrow prev" aria-label="上一张">‹</button>' : ''}
+      <img class="lightbox-touch" src="${esc(covers[idx].url)}" alt="" />
+      ${covers.length > 1 ? '<button class="lightbox-arrow next" aria-label="下一张">›</button>' : ''}
+      ${covers.length > 1 ? `<span class="lightbox-counter">${idx + 1} / ${covers.length}</span>` : ''}
+    </div>`;
+  document.body.appendChild(mask);
+
+  const update = () => {
+    const img = mask.querySelector('img');
+    if (img) img.src = covers[idx].url;
+    const counter = mask.querySelector('.lightbox-counter');
+    if (counter) counter.textContent = `${idx + 1} / ${covers.length}`;
+  };
+
+  const close = () => { mask.remove(); document.removeEventListener('keydown', onKey); };
+
+  mask.addEventListener('click', (e) => { if (e.target === mask) close(); });
+  mask.querySelector('.lightbox-close').addEventListener('click', close);
+  const prevBtn = mask.querySelector('.lightbox-arrow.prev');
+  const nextBtn = mask.querySelector('.lightbox-arrow.next');
+  if (prevBtn) prevBtn.addEventListener('click', (e) => { e.stopPropagation(); if (idx > 0) { idx--; update(); } });
+  if (nextBtn) nextBtn.addEventListener('click', (e) => { e.stopPropagation(); if (idx < covers.length - 1) { idx++; update(); } });
+
+  // Touch swipe
+  let touchX = 0;
+  mask.addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+  mask.addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 50) {
+      if (dx < 0 && idx < covers.length - 1) { idx++; update(); }
+      else if (dx > 0 && idx > 0) { idx--; update(); }
+    }
+  });
+
+  const onKey = (e) => {
+    if (e.key === 'Escape') close();
+    if (e.key === 'ArrowLeft' && idx > 0) { idx--; update(); }
+    if (e.key === 'ArrowRight' && idx < covers.length - 1) { idx++; update(); }
+  };
+  document.addEventListener('keydown', onKey);
+}
+
+/* ---------- Gallery navigation on card hover ---------- */
+function bindGalleryNav() {
+  document.querySelectorAll('.gh-cover.has-gallery').forEach(cover => {
+    const gid = cover.dataset.gid;
+    const g = state.githubs.find(x => x.id === gid);
+    if (!g) return;
+    const covers = (g.covers && g.covers.length) ? g.covers : (g.cover ? [g.cover] : []);
+    let idx = 0;
+    const img = cover.querySelector('.gallery-img');
+    const dots = cover.querySelectorAll('.g-dot');
+    const update = () => {
+      if (img) img.src = covers[idx].url;
+      dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+    };
+    cover.querySelector('.gallery-arrow.prev')?.addEventListener('click', (e) => { e.stopPropagation(); if (idx > 0) { idx--; update(); } });
+    cover.querySelector('.gallery-arrow.next')?.addEventListener('click', (e) => { e.stopPropagation(); if (idx < covers.length - 1) { idx++; update(); } });
+    dots.forEach(d => d.addEventListener('click', (e) => { e.stopPropagation(); idx = parseInt(d.dataset.idx, 10); update(); }));
+    // Click on image opens lightbox
+    cover.addEventListener('click', (e) => {
+      if (e.target.closest('button') || e.target.closest('label')) return;
+      openLightbox(gid, idx);
+    });
+  });
 }
 
 /* ---------- Repo 浏览器（管理端一键添加） ---------- */
@@ -481,6 +570,7 @@ async function loadData() {
 function renderAll() {
   renderStats();
   renderGithubs();
+  bindGalleryNav();
   renderHeatmap();
   renderArrangements();
   renderProjects();
@@ -731,13 +821,27 @@ function bindManageEvents() {
     fd.append('file', input.files[0]);
     fd.append('githubId', input.dataset.cover);
     const span = input.closest('.gh-cover-upload').querySelector('span');
-    span.textContent = '上传中…';
+    if (span) span.textContent = '⏳';
     try {
       await fetchJSON(API.uploadCover, { method: 'POST', body: fd });
-      toast('封面已更新 📷', 'ok');
+      toast('截图已上传 📷', 'ok');
       await loadData();
     } catch (err) { if (err.status === 401) sessionExpired(); else toast(err.message, 'err'); return; }
-    span.textContent = '📷 上传封面';
+    if (span) span.textContent = '📷';
+  });
+  // 删除单张封面
+  $('#githubGrid').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.cover-del');
+    if (!btn) return;
+    e.preventDefault();
+    const gid = btn.dataset.gid;
+    const cidx = btn.dataset.cidx;
+    if (!confirm('删除这张截图？')) return;
+    try {
+      await fetchJSON(`/api/githubs/${gid}/covers/${cidx}`, { method: 'DELETE' });
+      toast('已删除', 'ok');
+      await loadData();
+    } catch (err) { if (err.status === 401) sessionExpired(); else toast(err.message, 'err'); }
   });
 
   // 成果文件

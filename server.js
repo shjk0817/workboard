@@ -434,6 +434,14 @@ app.delete('/api/files/:id', requireAuth, (req, res) => {
 
 app.get('/api/githubs', (req, res) => {
   const list = DB.githubs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  // 迁移旧数据：单 cover 转为 covers 数组
+  for (const g of list) {
+    if (!g.covers) g.covers = [];
+    if (g.cover) {
+      if (!g.covers.some(c => c.stored === g.cover.stored)) g.covers.push(g.cover);
+      g.cover = null;
+    }
+  }
   res.json(list);
 });
 
@@ -449,6 +457,7 @@ app.post('/api/githubs', requireAuth, async (req, res) => {
     stars: Number.isFinite(s) ? Math.max(0, Math.floor(s)) : 0,
     language: String(language || '').trim().slice(0, 30),
     cover: null,
+    covers: [],
     createdAt: nowIso()
   };
   await autoFillGithub(item, { stars });
@@ -533,12 +542,17 @@ app.delete('/api/githubs/:id', requireAuth, (req, res) => {
   if (item.cover && item.cover.stored) {
     try { fs.unlinkSync(path.join(UPLOAD_DIR, item.cover.stored)); } catch (_) {}
   }
+  if (item.covers) {
+    for (const c of item.covers) {
+      try { fs.unlinkSync(path.join(UPLOAD_DIR, c.stored)); } catch (_) {}
+    }
+  }
   DB.githubs = DB.githubs.filter(x => x.id !== req.params.id);
   saveDb(DB);
   res.json({ ok: true });
 });
 
-// 封面/截图上传：multipart 字段 file + githubId
+// 封面上传：支持多图，追加到 covers 数组（multipart 字段 file + githubId）
 app.post('/api/upload-cover', requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '未收到封面文件' });
   const g = DB.githubs.find(x => x.id === String(req.body.githubId || ''));
@@ -546,10 +560,13 @@ app.post('/api/upload-cover', requireAuth, upload.single('file'), (req, res) => 
     try { fs.unlinkSync(req.file.path); } catch (_) {}
     return res.status(400).json({ error: 'GitHub 项目卡片不存在' });
   }
-  if (g.cover && g.cover.stored) {
-    try { fs.unlinkSync(path.join(UPLOAD_DIR, g.cover.stored)); } catch (_) {}
+  if (!g.covers) g.covers = [];
+  // 迁移旧 cover
+  if (g.cover) {
+    if (!g.covers.some(c => c.stored === g.cover.stored)) g.covers.push(g.cover);
+    g.cover = null;
   }
-  g.cover = {
+  const entry = {
     stored: req.file.filename,
     url: '/files/' + req.file.filename,
     name: req.file.originalname,
@@ -557,6 +574,19 @@ app.post('/api/upload-cover', requireAuth, upload.single('file'), (req, res) => 
     size: req.file.size,
     createdAt: nowIso()
   };
+  g.covers.push(entry);
+  saveDb(DB);
+  res.json(g);
+});
+
+// 删除单张封面：DELETE /api/githubs/:id/covers/:index
+app.delete('/api/githubs/:id/covers/:index', requireAuth, (req, res) => {
+  const g = DB.githubs.find(x => x.id === req.params.id);
+  if (!g) return res.status(404).json({ error: '不存在' });
+  const idx = parseInt(req.params.index, 10);
+  if (!g.covers || idx < 0 || idx >= g.covers.length) return res.status(404).json({ error: '图片不存在' });
+  const removed = g.covers.splice(idx, 1)[0];
+  try { fs.unlinkSync(path.join(UPLOAD_DIR, removed.stored)); } catch (_) {}
   saveDb(DB);
   res.json(g);
 });

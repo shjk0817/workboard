@@ -61,6 +61,15 @@
           <button type="button" class="btn btn-ghost hidden" id="ghCancel">取消</button>
           <input type="text" id="ghDesc" placeholder="一句话介绍（可选，点击换行）" maxlength="200" />
         </form>
+        <div class="repo-browser" id="repoBrowser">
+          <div class="repo-browser-head">
+            <h3>📦 shjk0817 的仓库</h3>
+            <button type="button" class="btn btn-ghost btn-sm" id="repoRefresh">刷新</button>
+          </div>
+          <div class="repo-list" id="repoList">
+            <p style="color:#94a3b8;text-align:center;padding:16px">加载中…</p>
+          </div>
+        </div>
         <div class="gh-grid" id="githubGrid"></div>
         <p class="empty hidden" id="githubEmpty">还没有 GitHub 项目卡片，添加第一个吧 🚀</p>
       </section>

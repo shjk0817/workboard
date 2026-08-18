@@ -495,6 +495,38 @@ app.get('/api/github-info', async (req, res) => {
   res.json(info);
 });
 
+// 拉取 shjk0817 所有公开仓库列表（供管理端一键添加），带 5 分钟缓存
+app.get('/api/github-repos', requireAuth, async (req, res) => {
+  const key = 'repos:' + GITHUB_USER;
+  const now = Date.now();
+  if (ghCache[key] && now - ghCache[key].t < 300000) return res.json(ghCache[key].v);
+  try {
+    const r = await httpGetRetry(
+      'https://api.github.com/users/' + encodeURIComponent(GITHUB_USER) + '/repos?per_page=100&sort=updated',
+      { 'User-Agent': 'workboard', 'Accept': 'application/vnd.github+json' }, 15000, 2);
+    if (r.status === 200) {
+      const repos = JSON.parse(r.text).map(r => ({
+        name: r.name,
+        full_name: r.full_name,
+        description: r.description || '',
+        stars: r.stargazers_count || 0,
+        language: r.language || '',
+        html_url: r.html_url,
+        private: r.private || false
+      }));
+      const result = { ok: true, repos };
+      ghCache[key] = { t: now, v: result };
+      return res.json(result);
+    }
+    // GitHub 连不上时返回空列表，不阻塞
+    if (ghCache[key]) return res.json(ghCache[key].v);
+    return res.json({ ok: true, repos: [] });
+  } catch (e) {
+    if (ghCache[key]) return res.json(ghCache[key].v);
+    return res.json({ ok: true, repos: [] });
+  }
+});
+
 app.delete('/api/githubs/:id', requireAuth, (req, res) => {
   const item = DB.githubs.find(x => x.id === req.params.id);
   if (!item) return res.status(404).json({ error: '不存在' });

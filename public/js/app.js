@@ -17,7 +17,8 @@ const API = {
   activity: '/api/activity?days=365',
   upload: '/api/upload',
   githubs: '/api/githubs',
-  uploadCover: '/api/upload-cover'
+  uploadCover: '/api/upload-cover',
+  githubRepos: '/api/github-repos'
 };
 
 const state = {
@@ -30,7 +31,8 @@ const state = {
   filter: 'all',
   editingArrangeId: null,
   editingProjectId: null,
-  editingGithubId: null
+  editingGithubId: null,
+  githubRepos: []
 };
 
 /* ---------- utils ---------- */
@@ -168,6 +170,46 @@ function renderGithubs() {
       </div>
     </div>`;
   }).join('');
+}
+
+/* ---------- Repo 浏览器（管理端一键添加） ---------- */
+function renderRepoBrowser() {
+  const list = $('#repoList');
+  if (!list || PAGE !== 'manage') return;
+  const repos = state.githubRepos || [];
+  if (!repos.length) {
+    list.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:16px">暂无仓库或加载失败</p>';
+    return;
+  }
+  const existing = new Set(state.githubs.map(g => {
+    const s = (g.repo || '').replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '').toLowerCase();
+    return s;
+  }));
+  list.innerHTML = repos.map(r => {
+    const full = (r.full_name || '').toLowerCase();
+    const already = existing.has(full);
+    return `
+    <div class="repo-item${already ? ' already' : ''}">
+      <div class="repo-info">
+        <a class="repo-name" href="${esc(r.html_url)}" target="_blank" rel="noopener">${esc(r.name)}</a>
+        ${r.description ? `<div class="repo-desc">${esc(r.description)}</div>` : ''}
+        <div class="repo-meta">
+          <span>⭐ ${r.stars}</span>
+          ${r.language ? `<span>● ${esc(r.language)}</span>` : ''}
+        </div>
+      </div>
+      <button type="button" class="repo-add-btn${already ? ' added' : ''}" data-repo="${esc(r.full_name)}" ${already ? 'disabled' : ''}>${already ? '已添加' : '+ 添加'}</button>
+    </div>`;
+  }).join('');
+}
+
+async function loadRepos() {
+  if (PAGE !== 'manage') return;
+  try {
+    const data = await fetchJSON(API.githubRepos);
+    state.githubRepos = (data && data.repos) || [];
+  } catch (_) { state.githubRepos = []; }
+  renderRepoBrowser();
 }
 
 /* ---------- heatmap ---------- */
@@ -609,6 +651,41 @@ function bindManageEvents() {
     } catch (err) { if (err.status === 401) sessionExpired(); else toast(err.message, 'err'); }
   });
   $('#ghCancel').addEventListener('click', resetGithubForm);
+  // Repo 浏览器：一键添加
+  $('#repoList').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.repo-add-btn');
+    if (!btn || btn.disabled) return;
+    const fullName = btn.dataset.repo;
+    const repo = state.githubRepos.find(r => r.full_name === fullName);
+    if (!repo) return;
+    btn.disabled = true;
+    btn.textContent = '添加中…';
+    try {
+      await apiJson(API.githubs, 'POST', {
+        title: repo.name,
+        repo: repo.html_url,
+        stars: repo.stars,
+        language: repo.language || '其他',
+        desc: repo.description || ''
+      });
+      toast(`已添加 ${repo.name} 🚀`, 'ok');
+      await loadData();
+      await loadRepos();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = '+ 添加';
+      if (err.status === 401) sessionExpired(); else toast(err.message, 'err');
+    }
+  });
+  $('#repoRefresh').addEventListener('click', async () => {
+    const btn = $('#repoRefresh');
+    btn.textContent = '刷新中…';
+    btn.disabled = true;
+    await loadRepos();
+    btn.textContent = '刷新';
+    btn.disabled = false;
+    toast('已刷新', 'ok');
+  });
   // 语言自动识别：仓库输入框改完即从 GitHub 拉取主语言 / Star / 描述
   $('#ghRepo').addEventListener('change', async () => {
     const repo = $('#ghRepo').value.trim();
@@ -738,7 +815,7 @@ async function init() {
     if (PAGE === 'manage') {
       let authed = false;
       try { authed = (await fetchJSON('/api/auth')).authed; } catch (_) {}
-      if (authed) { enterManage(); await loadData(); }
+      if (authed) { enterManage(); await loadData(); loadRepos(); }
       else { $('#loginGate').classList.remove('hidden'); $('#manageContent').classList.add('hidden'); }
     } else {
       await loadData();

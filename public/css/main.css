@@ -246,6 +246,40 @@ main.container { padding-top: 24px; padding-bottom: 40px; }
 .gh-desc { color: var(--text-2); font-size: 13px; margin: 1px 0 0; flex: 1; min-width: 0; }
 .gh-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 
+/* ---------------- Repo 浏览器（管理端一键添加） ---------------- */
+.repo-browser {
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--bg); margin-bottom: 18px; overflow: hidden;
+}
+.repo-browser-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; background: #fff; border-bottom: 1px solid var(--line);
+}
+.repo-browser-head h3 { margin: 0; font-size: 15px; font-weight: 700; }
+.repo-list { max-height: 360px; overflow-y: auto; }
+.repo-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--line);
+  transition: background .1s; background: #fff;
+}
+.repo-item:last-child { border-bottom: none; }
+.repo-item:hover { background: var(--c-blue-soft); }
+.repo-item.already { opacity: .5; pointer-events: none; }
+.repo-item.already .repo-add-btn { background: #e2e8f0; color: #94a3b8; cursor: default; }
+.repo-info { flex: 1; min-width: 0; }
+.repo-name { font-weight: 600; font-size: 14px; color: var(--c-blue); }
+.repo-name:hover { text-decoration: underline; }
+.repo-desc { color: var(--text-3); font-size: 12.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.repo-meta { display: flex; gap: 12px; font-size: 12px; color: var(--text-2); margin-top: 3px; }
+.repo-meta span { display: inline-flex; align-items: center; gap: 3px; }
+.repo-add-btn {
+  flex-shrink: 0; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--c-blue);
+  background: #fff; color: var(--c-blue); cursor: pointer; font-size: 12.5px; font-weight: 600;
+  font-family: inherit; transition: all .15s; white-space: nowrap;
+}
+.repo-add-btn:hover { background: var(--c-blue); color: #fff; }
+.repo-add-btn.added { background: #e2e8f0; border-color: #e2e8f0; color: #94a3b8; }
+
 /* ---------------- Files ---------------- */
 .files-meta { color: var(--text-3); font-size: 12.5px; margin: 2px 0 12px; }
 .file-item { display: flex; align-items: center; gap: 12px; }

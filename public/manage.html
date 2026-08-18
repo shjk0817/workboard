@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理 · jktac.com</title>
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/css/main.css" />
+</head>
+<body data-page="manage">
+  <!-- 登录门 -->
+  <div class="login-gate hidden" id="loginGate">
+    <div class="login-box card">
+      <div class="login-brand">
+        <img class="brand-img" src="/apple-touch-icon.png" alt="jktac.com" />
+      </div>
+      <h2>内容管理</h2>
+      <p class="sub" style="text-align:center">请输入管理密码以编辑内容</p>
+      <form id="loginForm" autocomplete="off">
+        <input type="password" id="loginPassword" placeholder="管理密码" required autofocus autocomplete="current-password" />
+        <button type="submit" class="btn btn-primary" style="width:100%">进入管理</button>
+        <p class="login-err hidden" id="loginErr">密码错误，请重试</p>
+      </form>
+      <a class="link" href="/" style="display:block;text-align:center;margin-top:14px">← 返回展示页</a>
+    </div>
+  </div>
+
+  <!-- 管理内容 -->
+  <div id="manageContent" class="hidden">
+    <header class="site-header">
+      <div class="container header-inner">
+        <div class="brand">
+          <span class="brand-chip"><img class="brand-lockup" src="/logo.png" alt="jktac.com" /></span>
+        </div>
+        <div class="header-actions">
+          <a class="btn btn-ghost-light" href="/">查看展示页</a>
+          <button type="button" class="btn btn-ghost-light" id="logoutBtn">退出</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="container">
+      <p class="manage-note">🔒 管理模式：以下操作都会<strong>实时写入</strong>并同步到展示页。</p>
+
+      <!-- GitHub 项目卡片 -->
+      <section class="card">
+        <div class="card-head">
+          <div><h2>GitHub 项目</h2><p class="sub">用软件截图做封面，点击标题直达仓库；填上 *用户名/仓库* 后自动识别语言与 Star</p></div>
+        </div>
+        <form id="githubForm" class="add-form add-form-gh" autocomplete="off">
+          <input type="text" id="ghTitle" placeholder="项目名称" required maxlength="60" />
+          <input type="text" id="ghRepo" placeholder="https://github.com/用户名/仓库" maxlength="200" />
+          <input type="number" id="ghStars" min="0" step="1" value="0" placeholder="Star" />
+          <select id="ghLang">
+            <option>JavaScript</option><option>TypeScript</option><option>Python</option>
+            <option>Go</option><option>Java</option><option>C++</option><option>Rust</option>
+            <option>Vue</option><option>React</option><option>Node.js</option><option>其他</option>
+          </select>
+          <button type="submit" class="btn btn-primary" id="ghSubmit">添加</button>
+          <button type="button" class="btn btn-ghost hidden" id="ghCancel">取消</button>
+          <input type="text" id="ghDesc" placeholder="一句话介绍（可选，点击换行）" maxlength="200" />
+        </form>
+        <div class="gh-grid" id="githubGrid"></div>
+        <p class="empty hidden" id="githubEmpty">还没有 GitHub 项目卡片，添加第一个吧 🚀</p>
+      </section>
+
+      <!-- 热力图 -->
+      <section class="card heatmap-card">
+        <div class="card-head">
+          <div><h2>活跃热力图</h2><p class="sub">点击任意日期即可设置当天活跃度</p></div>
+          <div class="legend"><span>少</span><i data-l="0"></i><i data-l="1"></i><i data-l="2"></i><i data-l="3"></i><i data-l="4"></i><span>多</span></div>
+        </div>
+        <div class="heatmap" id="heatmap"></div>
+      </section>
+
+      <!-- 工作安排 -->
+      <section class="card">
+        <div class="card-head">
+          <div><h2>工作安排</h2><p class="sub" id="arrangeSub">今日 / 近期日程</p></div>
+          <div class="seg" id="arrangeFilter">
+            <button data-f="all" class="active">全部</button>
+            <button data-f="todo">待办</button>
+            <button data-f="done">已完成</button>
+          </div>
+        </div>
+        <form id="arrangeForm" class="add-form" autocomplete="off">
+          <input type="date" id="arrangeDate" required />
+          <input type="text" id="arrangeTitle" placeholder="安排标题" required maxlength="60" />
+          <input type="text" id="arrangeNote" placeholder="备注（可选）" maxlength="120" />
+          <button type="submit" class="btn btn-primary" id="arrangeSubmit">添加</button>
+          <button type="button" class="btn btn-ghost hidden" id="arrangeCancel">取消</button>
+        </form>
+        <ul class="list" id="arrangeList"></ul>
+        <p class="empty hidden" id="arrangeEmpty">还没有安排，在上方添加第一条吧 👆</p>
+      </section>
+
+      <!-- 项目目标与进度 -->
+      <section class="card">
+        <div class="card-head">
+          <div><h2>项目目标与进度</h2><p class="sub" id="projectSub">跟踪项目目标、进度与阶段性进展</p></div>
+        </div>
+        <form id="projectForm" class="add-form add-form-project" autocomplete="off">
+          <input type="text" id="projectName" placeholder="项目名称" required maxlength="60" />
+          <input type="text" id="projectGoal" placeholder="项目目标（一句话）" maxlength="120" />
+          <label class="num-field"><span>进度 %</span><input type="number" id="projectProgress" min="0" max="100" step="5" value="0" /></label>
+          <select id="projectStatus">
+            <option>进行中</option><option>已启动</option><option>已暂停</option><option>已完成</option><option>已搁置</option>
+          </select>
+          <button type="submit" class="btn btn-primary" id="projectSubmit">创建</button>
+          <button type="button" class="btn btn-ghost hidden" id="projectCancel">取消</button>
+        </form>
+        <div class="projects" id="projectsGrid"></div>
+        <p class="empty hidden" id="projectsEmpty">还没有项目，先创建一个目标吧 🎯</p>
+      </section>
+
+      <!-- 成果文件 -->
+      <section class="card">
+        <div class="card-head">
+          <div><h2>成果文件</h2><p class="sub">上传项目的交付物 / 成果文档</p></div>
+        </div>
+        <form id="uploadForm" class="add-form add-form-upload" autocomplete="off">
+          <select id="uploadProject"><option value="">未关联项目（通用）</option></select>
+          <label class="file-pick">
+            <input type="file" id="uploadFile" />
+            <span class="fp-btn">选择文件</span>
+            <span class="fp-name" id="fileName">未选择文件</span>
+          </label>
+          <button type="submit" class="btn btn-primary">上传</button>
+        </form>
+        <div class="files-meta" id="filesMeta"></div>
+        <ul class="list files-list" id="filesList"></ul>
+        <p class="empty hidden" id="filesEmpty">还没有成果文件，上传第一个吧 📎</p>
+      </section>
+
+      <p style="text-align:center;color:#86909c;font-size:13px;padding:6px 0 20px">
+        <a class="link" href="/">查看展示页</a> · <a class="link" href="https://github.com/shjk0817" target="_blank" rel="noopener">GitHub: shjk0817</a>
+      </p>
+    </main>
+  </div>
+
+  <!-- 通用对话框 -->
+  <div class="modal-mask hidden" id="modalMask">
+    <div class="modal">
+      <div class="modal-head"><span class="modal-title" id="modalTitle"></span><button class="ghost-btn" id="modalClose" aria-label="关闭">✕</button></div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="/js/app.js" defer></script>
+</body>
+</html>

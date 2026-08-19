@@ -471,7 +471,8 @@ function renderArrangements() {
         <button type="button" class="btn btn-danger btn-sm" data-act="del" data-id="${a.id}">删除</button>
       </div>` : '';
     return `
-    <li class="${a.status === 'done' ? 'done' : ''}">
+    <li class="${a.status === 'done' ? 'done' : ''}" draggable="${EDIT_MODE}" data-id="${a.id}">
+      ${EDIT_MODE ? '<span class="drag-handle" title="拖拽排序">⠿</span>' : ''}
       <div class="row-main">
         <div class="row-title">${a.status === 'done' ? '<span class="done-mark">✓</span>' : ''}${esc(a.title)}</div>
         <div class="row-meta">
@@ -505,7 +506,8 @@ function renderProjects() {
         <button type="submit" class="btn btn-primary btn-sm">+ 进展</button>
       </form>` : '';
     return `
-    <div class="project">
+    <div class="project" draggable="${EDIT_MODE}" data-id="${p.id}">
+      ${EDIT_MODE ? '<span class="drag-handle" title="拖拽排序" style="position:absolute;top:10px;right:10px">⠿</span>' : ''}
       <div class="p-top">
         <h3 class="p-name">${esc(p.name)}</h3>
         <span class="p-status" style="background:${statusColor.bg};color:${statusColor.fg}">${esc(p.status)}</span>
@@ -606,6 +608,57 @@ function renderAll() {
   renderProjects();
   renderFiles();
   renderFileSelect();
+  applySearchFilter();
+}
+
+/* ---------- 全局搜索过滤 ---------- */
+let searchTerm = '';
+function applySearchFilter() {
+  const q = searchTerm.toLowerCase().trim();
+  // 仅展示页生效
+  if (PAGE !== 'show') return;
+
+  // 过滤安排
+  const listItems = document.querySelectorAll('#arrangeList li');
+  listItems.forEach(li => {
+    const text = li.textContent.toLowerCase();
+    li.classList.toggle('hidden', q && !text.includes(q));
+  });
+
+  // 过滤项目
+  const projectCards = document.querySelectorAll('#projectsGrid .project');
+  projectCards.forEach(card => {
+    const text = card.textContent.toLowerCase();
+    card.classList.toggle('hidden', q && !text.includes(q));
+  });
+
+  // 过滤文件
+  const fileItems = document.querySelectorAll('#filesList .file-item');
+  fileItems.forEach(li => {
+    const text = li.textContent.toLowerCase();
+    li.classList.toggle('hidden', q && !text.includes(q));
+  });
+
+  // 过滤 GitHub 卡片
+  const ghCards = document.querySelectorAll('#githubGrid .gh-card');
+  ghCards.forEach(card => {
+    const text = card.textContent.toLowerCase();
+    card.classList.toggle('hidden', q && !text.includes(q));
+  });
+
+  // 更新空状态提示
+  updateEmptyStatesAfterSearch(q);
+}
+function updateEmptyStatesAfterSearch(q) {
+  if (!q) return;
+  const visibleArr = document.querySelectorAll('#arrangeList li:not(.hidden)').length;
+  const visibleProj = document.querySelectorAll('#projectsGrid .project:not(.hidden)').length;
+  const visibleFiles = document.querySelectorAll('#filesList .file-item:not(.hidden)').length;
+  const visibleGh = document.querySelectorAll('#githubGrid .gh-card:not(.hidden)').length;
+  const $ae = $('#arrangeEmpty'); if ($ae) $ae.classList.toggle('hidden', visibleArr > 0);
+  const $pe = $('#projectsEmpty'); if ($pe) $pe.classList.toggle('hidden', visibleProj > 0);
+  const $fe = $('#filesEmpty'); if ($fe) $fe.classList.toggle('hidden', visibleFiles > 0);
+  const $ge = $('#githubEmpty'); if ($ge) $ge.classList.toggle('hidden', visibleGh > 0);
 }
 
 function renderFileSelect() {
@@ -625,11 +678,74 @@ async function loadStats() {
 /* ============================================================
    事件绑定
    ============================================================ */
+function initDragSort(containerSelector, type) {
+  const container = $(containerSelector);
+  if (!container || PAGE !== 'manage') return;
+
+  let draggedEl = null;
+
+  container.addEventListener('dragstart', (e) => {
+    const item = e.target.closest('[draggable]');
+    if (!item || item.dataset.dragHandled) return;
+    draggedEl = item;
+    item.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', item.dataset.id);
+  });
+
+  container.addEventListener('dragend', (e) => {
+    const item = e.target.closest('[draggable]');
+    if (item) item.classList.remove('dragging');
+    container.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    draggedEl = null;
+  });
+
+  container.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (!draggedEl) return;
+    const item = e.target.closest('[draggable]');
+    if (!item || item === draggedEl) return;
+    container.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    item.classList.add('drag-over');
+    e.dataTransfer.dropEffect = 'move';
+  });
+
+  container.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    const target = e.target.closest('[draggable]');
+    if (!draggedEl || !target || draggedEl === target) return;
+    container.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+
+    // 收集当前顺序
+    const items = [...container.querySelectorAll('[draggable]')];
+    const ids = items.map(el => el.dataset.id);
+
+    // 在 DOM 中移动
+    const draggedIdx = items.indexOf(draggedEl);
+    const targetIdx = items.indexOf(target);
+    if (draggedIdx < targetIdx) {
+      target.after(draggedEl);
+    } else {
+      target.before(draggedEl);
+    }
+
+    // 持久化
+    try {
+      await apiJson(`/api/${type}/reorder`, 'PUT', { ids });
+    } catch (err) {
+      if (err.status === 401) sessionExpired();
+      else toast('排序失败', 'err');
+      await loadData(); // 回退
+    }
+  });
+}
+
 function bindEvents() {
   const mc = $('#modalClose'); if (mc) mc.addEventListener('click', closeModal);
   const mm = $('#modalMask'); if (mm) mm.addEventListener('click', (e) => { if (e.target.id === 'modalMask') closeModal(); });
   initGalleryDelegation();
   const tt = $('#themeToggle'); if (tt) tt.addEventListener('click', toggleTheme);
+  const gs = $('#globalSearch'); if (gs) gs.addEventListener('input', (e) => { searchTerm = e.target.value; applySearchFilter(); });
   if (PAGE === 'manage') bindManageEvents();
 }
 
@@ -951,6 +1067,10 @@ function bindManageEvents() {
       await loadData();
     } catch (err) { if (err.status === 401) sessionExpired(); else toast(err.message, 'err'); }
   });
+
+  // 拖拽排序（安排列表 + 项目网格）
+  initDragSort('#arrangeList', 'arrangements');
+  initDragSort('#projectsGrid', 'projects');
 }
 
 function resetArrangeForm() {

@@ -353,7 +353,7 @@ app.get('/api/auth', (req, res) => {
 /* ---------------- Arrangements ---------------- */
 
 app.get('/api/arrangements', (req, res) => {
-  const list = DB.arrangements.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const list = DB.arrangements.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   res.json(list);
 });
 
@@ -368,6 +368,7 @@ app.post('/api/arrangements', requireAuth, (req, res) => {
     title: String(title).trim(),
     note: String(note || '').trim(),
     status: status === 'done' ? 'done' : 'todo',
+    order: DB.arrangements.length,
     createdAt: nowIso()
   };
   DB.arrangements.push(item);
@@ -395,10 +396,20 @@ app.delete('/api/arrangements/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// 重新排序
+app.put('/api/arrangements/reorder', requireAuth, (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids 必须为数组' });
+  const map = new Map(DB.arrangements.map(a => [a.id, a]));
+  ids.forEach((id, i) => { const a = map.get(id); if (a) a.order = i; });
+  saveDb(DB);
+  res.json({ ok: true });
+});
+
 /* ---------------- Projects + progress ---------------- */
 
 app.get('/api/projects', (req, res) => {
-  const list = DB.projects.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const list = DB.projects.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   res.json(list);
 });
 
@@ -412,6 +423,7 @@ app.post('/api/projects', requireAuth, (req, res) => {
     goal: String(goal || '').trim(),
     progress: Number.isFinite(p) ? Math.max(0, Math.min(100, Math.round(p))) : 0,
     status: String(status || '进行中').trim().slice(0, 20),
+    order: DB.projects.length,
     createdAt: nowIso(),
     updatedAt: nowIso()
   };
@@ -478,6 +490,16 @@ app.post('/api/projects/:id/progress', requireAuth, (req, res) => {
   res.json(log);
 });
 
+// 重新排序项目
+app.put('/api/projects/reorder', requireAuth, (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids 必须为数组' });
+  const map = new Map(DB.projects.map(p => [p.id, p]));
+  ids.forEach((id, i) => { const p = map.get(id); if (p) p.order = i; });
+  saveDb(DB);
+  res.json({ ok: true });
+});
+
 /* ---------------- Files (成果文件) ---------------- */
 
 app.get('/api/files', (req, res) => {
@@ -520,7 +542,7 @@ app.delete('/api/files/:id', requireAuth, (req, res) => {
 
 app.get('/api/githubs', (req, res) => {
   const showAll = req.query.all === '1';
-  let list = DB.githubs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  let list = DB.githubs.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   // 迁移旧数据：单 cover 转为 covers 数组，补 enabled 字段
   for (const g of list) {
     if (!g.covers) g.covers = [];
@@ -549,6 +571,7 @@ app.post('/api/githubs', requireAuth, async (req, res) => {
     cover: null,
     covers: [],
     enabled: true,
+    order: DB.githubs.length,
     createdAt: nowIso()
   };
   await autoFillGithub(item, { stars });
@@ -692,6 +715,16 @@ app.put('/api/githubs/:id/toggle', requireAuth, (req, res) => {
   res.json(g);
 });
 
+// 重新排序 GitHub 卡片
+app.put('/api/githubs/reorder', requireAuth, (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids 必须为数组' });
+  const map = new Map(DB.githubs.map(g => [g.id, g]));
+  ids.forEach((id, i) => { const g = map.get(id); if (g) g.order = i; });
+  saveDb(DB);
+  res.json({ ok: true });
+});
+
 // 批量添加所有仓库为卡片：POST /api/github-repos/batch
 app.post('/api/github-repos/batch', requireAuth, async (req, res) => {
   const key = 'repos:' + GITHUB_USER;
@@ -717,6 +750,7 @@ app.post('/api/github-repos/batch', requireAuth, async (req, res) => {
       covers: [],
       cover: null,
       enabled: true,
+      order: DB.githubs.length,
       createdAt: nowIso()
     });
     existing.add(full);

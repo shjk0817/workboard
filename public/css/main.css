@@ -181,6 +181,16 @@ main.container { padding-top: 24px; padding-bottom: 40px; }
 .chip-done { background: var(--grad-loud); }
 .row-actions { display: flex; gap: 6px; }
 
+/* 拖拽排序 */
+.drag-handle {
+  cursor: grab; color: var(--text-3); font-size: 16px; user-select: none;
+  padding: 2px 4px; line-height: 1; flex-shrink: 0;
+}
+.drag-handle:active { cursor: grabbing; }
+.list li.drag-over { border-color: var(--c-blue); box-shadow: 0 0 0 3px rgba(37,99,235,.15); background: var(--c-blue-soft); }
+.project.drag-over { border-color: var(--c-blue); box-shadow: 0 0 0 3px rgba(37,99,235,.15); background: var(--c-blue-soft); }
+.list li.dragging { opacity: .4; }
+
 /* ---------------- Projects ---------------- */
 .projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 .project {
@@ -370,6 +380,15 @@ main.container { padding-top: 24px; padding-bottom: 40px; }
 }
 .btn-ghost-light:hover { background: var(--c-blue-soft); border-color: var(--c-blue-lighter); color: var(--c-blue); }
 .header-actions a.btn-ghost-light { display: inline-flex; align-items: center; }
+
+/* ---------------- 全局搜索 ---------------- */
+.search-input {
+  font-family: inherit; font-size: 14px; color: var(--text);
+  padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); outline: none; width: 180px; transition: all .15s;
+}
+.search-input:focus { border-color: var(--c-blue); width: 240px; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+.search-input::placeholder { color: var(--text-3); }
 
 /* ---------------- 登录门 ---------------- */
 .login-gate {

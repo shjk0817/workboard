@@ -779,6 +779,38 @@ app.get('/api/stats', (req, res) => {
   });
 });
 
+/* ---------------- Data Export / Import ---------------- */
+
+// 导出全部数据为 JSON 文件
+app.get('/api/export', requireAuth, (req, res) => {
+  const snapshot = { ...DB, _exportedAt: nowIso() };
+  res.setHeader('Content-Disposition', `attachment; filename="workboard-backup-${dateKey(new Date())}.json"`);
+  res.json(snapshot);
+});
+
+// 导入数据（JSON 文件上传，合并模式：覆盖 arrangements/projects/progress/files/githubs/activity）
+app.post('/api/import', requireAuth, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '未收到文件' });
+  try {
+    const raw = fs.readFileSync(req.file.path, 'utf8');
+    const data = JSON.parse(raw);
+    const allowed = ['arrangements', 'projects', 'progress', 'files', 'githubs', 'activity'];
+    let imported = 0;
+    for (const k of allowed) {
+      if (Array.isArray(data[k]) || (k === 'activity' && typeof data[k] === 'object')) {
+        DB[k] = data[k];
+        imported++;
+      }
+    }
+    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    await saveDb(DB);
+    res.json({ ok: true, imported });
+  } catch (e) {
+    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    res.status(400).json({ error: '导入失败：JSON 格式无效' });
+  }
+});
+
 /* ---------------- Static + spa fallback ---------------- */
 
 app.get('*', (req, res, next) => {

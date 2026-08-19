@@ -145,6 +145,18 @@
         <p class="empty hidden" id="filesEmpty">还没有成果文件，上传第一个吧 📎</p>
       </section>
 
+      <!-- 数据管理 -->
+      <section class="card">
+        <div class="card-head"><div><h2>数据管理</h2><p class="sub">导出备份或导入恢复</p></div></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" class="btn btn-primary" id="exportBtn">📥 导出全部数据</button>
+          <label class="btn btn-ghost" style="cursor:pointer;position:relative">
+            📤 导入数据恢复
+            <input type="file" accept=".json" hidden id="importFile" />
+          </label>
+        </div>
+      </section>
+
       <p style="text-align:center;color:#86909c;font-size:13px;padding:6px 0 20px">
         <a class="link" href="/">查看展示页</a> · <a class="link" href="https://github.com/shjk0817" target="_blank" rel="noopener">GitHub: shjk0817</a>
       </p>

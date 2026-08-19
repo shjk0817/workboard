@@ -824,6 +824,27 @@ function bindManageEvents() {
     btn.textContent = '批量添加全部';
     btn.disabled = false;
   });
+  // 数据导出
+  $('#exportBtn').addEventListener('click', () => {
+    window.open('/api/export', '_blank');
+  });
+  // 数据导入
+  $('#importFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!confirm(`确定导入 ${file.name} ？当前数据将被覆盖。`)) { e.target.value = ''; return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const r = await fetchJSON('/api/import', { method: 'POST', body: fd });
+      toast(`已导入 ${r.imported} 类数据，页面即将刷新`, 'ok');
+      e.target.value = '';
+      setTimeout(() => location.reload(), 1000);
+    } catch (err) {
+      if (err.status === 401) sessionExpired(); else toast(err.message, 'err');
+      e.target.value = '';
+    }
+  });
   // 语言自动识别：仓库输入框改完即从 GitHub 拉取主语言 / Star / 描述
   $('#ghRepo').addEventListener('change', async () => {
     const repo = $('#ghRepo').value.trim();

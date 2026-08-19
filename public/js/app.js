@@ -297,7 +297,7 @@ function renderRepoBrowser() {
   if (!list || PAGE !== 'manage') return;
   const repos = state.githubRepos || [];
   if (!repos.length) {
-    list.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:16px">暂无仓库或加载失败</p>';
+    list.innerHTML = '<p style="color:var(--text-3);text-align:center;padding:16px">暂无仓库或加载失败</p>';
     return;
   }
   const existing = new Set(state.githubs.map(g => {
@@ -434,13 +434,13 @@ function renderHeatmap() {
 
 function promptActivity(date, current) {
   const bodyHtml = `
-    <p style="color:#86909c;font-size:13.5px;margin:0 0 4px">${date}</p>
+    <p style="color:var(--text-3);font-size:13.5px;margin:0 0 4px">${date}</p>
     <div class="num-stepper">
       <button type="button" id="stMinus">−</button>
       <input type="number" id="stCount" min="0" value="${Number(current) || 0}" />
       <button type="button" id="stPlus">＋</button>
     </div>
-    <p style="color:#86909c;font-size:12.5px;margin:10px 0 0">设置该日活跃度（手动覆盖），设为 0 即清除。</p>`;
+    <p style="color:var(--text-3);font-size:12.5px;margin:10px 0 0">设置该日活跃度（手动覆盖），设为 0 即清除。</p>`;
   openModal('记录活跃度', bodyHtml, {
     saveText: '确定',
     onSave: async () => {
@@ -545,7 +545,7 @@ function statusClass(s) {
   if (s === '已完成') return { bg: 'linear-gradient(135deg,#2563eb,#3b82f6)', fg: '#fff' };
   if (s === '进行中') return { bg: 'linear-gradient(135deg,#1d4ed8,#2563eb)', fg: '#fff' };
   if (s === '已启动') return { bg: 'linear-gradient(135deg,#3b82f6,#60a5fa)', fg: '#fff' };
-  return { bg: '#f1f5f9', fg: '#475569' };
+  return { bg: 'var(--bg)', fg: '#475569' };
 }
 
 /* ---------- files ---------- */
@@ -629,6 +629,7 @@ function bindEvents() {
   const mc = $('#modalClose'); if (mc) mc.addEventListener('click', closeModal);
   const mm = $('#modalMask'); if (mm) mm.addEventListener('click', (e) => { if (e.target.id === 'modalMask') closeModal(); });
   initGalleryDelegation();
+  const tt = $('#themeToggle'); if (tt) tt.addEventListener('click', toggleTheme);
   if (PAGE === 'manage') bindManageEvents();
 }
 
@@ -987,7 +988,27 @@ function enterManage() {
 }
 
 /* ---------- init ---------- */
+function initTheme() {
+  const saved = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = saved || (prefersDark ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+  updateThemeIcon(theme);
+}
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  updateThemeIcon(next);
+}
+function updateThemeIcon(theme) {
+  const btn = $('#themeToggle');
+  if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+}
+
 async function init() {
+  initTheme();
   bindEvents();
   const d = $('#arrangeDate'); if (d) d.value = todayKey();
   try {

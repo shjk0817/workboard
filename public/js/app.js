@@ -1024,5 +1024,9 @@ async function init() {
     if (err.status === 401) sessionExpired();
     else toast('加载失败：' + err.message, 'err');
   }
+  // 注册 Service Worker（PWA 离线支持）
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
 }
 document.addEventListener('DOMContentLoaded', init);

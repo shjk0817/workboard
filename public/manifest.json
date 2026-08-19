@@ -1,0 +1,14 @@
+{
+  "name": "jktac.com · 工作台",
+  "short_name": "工作台",
+  "description": "jktac 工作台 · 活跃热力图 · 工作安排 · 项目进度 · 成果文件",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "icons": [
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/favicon-48x48.png", "sizes": "48x48", "type": "image/png" },
+    { "src": "/favicon-32x32.png", "sizes": "32x32", "type": "image/png" }
+  ]
+}

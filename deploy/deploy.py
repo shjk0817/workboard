@@ -68,7 +68,7 @@ def main():
     # 按父->子顺序创建；SFTP mkdir 不递归，祖先必须已存在
     dirs = [APP_DIR, APP_DIR + "/public", APP_DIR + "/public/css",
             APP_DIR + "/public/js", APP_DIR + "/data", APP_DIR + "/data/uploads",
-            APP_DIR + "/deploy"]
+            APP_DIR + "/deploy", APP_DIR + "/lib"]
     for d in dirs:
         try:
             sftp.mkdir(d)
@@ -109,6 +109,14 @@ def main():
             if os.path.isdir(lp):
                 continue
             up(lp, remote_dir + "/" + f)
+
+    # 上传 lib/ 模块
+    lib_root = os.path.join(LOCAL_ROOT, "lib")
+    if os.path.isdir(lib_root):
+        for f in os.listdir(lib_root):
+            lp = os.path.join(lib_root, f)
+            if os.path.isfile(lp):
+                up(lp, APP_DIR + "/lib/" + f)
 
     sftp.close()
 

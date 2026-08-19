@@ -554,7 +554,7 @@ function statusClass(s) {
 let trendChart = null;
 function renderTrendChart() {
   const canvas = $('#trendChart');
-  if (!canvas || PAGE !== 'show') return;
+  if (!canvas || PAGE !== 'show' || typeof Chart === 'undefined') return;
   const $empty = $('#trendEmpty');
   if (!$empty) return;
 

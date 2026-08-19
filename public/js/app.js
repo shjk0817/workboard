@@ -149,7 +149,7 @@ function renderGithubs() {
     const hasGallery = covers.length > 1;
     const coverHtml = covers.length > 0
       ? `<div class="gh-cover${hasGallery ? ' has-gallery' : ''}" data-gid="${g.id}">
-           <img class="gallery-img" src="${esc(covers[0].url)}" alt="封面" data-idx="0" />
+           <img class="gallery-img" src="${esc(covers[0].url)}" alt="封面" data-idx="0" loading="lazy" />
            ${hasGallery ? `
              <button class="gallery-arrow prev" data-gid="${g.id}" data-dir="-1" aria-label="上一张">‹</button>
              <button class="gallery-arrow next" data-gid="${g.id}" data-dir="1" aria-label="下一张">›</button>

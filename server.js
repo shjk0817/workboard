@@ -6,6 +6,12 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const https = require('https');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const lockfile = require('proper-lockfile');
 
 const app = express();
 const PORT = process.env.PORT || 80;
@@ -13,27 +19,79 @@ const PORT = process.env.PORT || 80;
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 
 const MAX_UPLOAD = 50 * 1024 * 1024; // 50MB
 
-/* ---------------- 管理端鉴权 ---------------- */
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Ifiwant0';
-const sessions = new Map(); // token -> { createdAt }
+/* ---------------- 安全中间件 ---------------- */
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", 'data:'],
+    }
+  },
+  crossOriginEmbedderPolicy: false
+}));
+app.use(cookieParser());
+app.use(express.json({ limit: '1mb' }));
 
-function setCookie(res, name, value, maxAgeSeconds) {
-  res.setHeader('Set-Cookie', `${name}=${value}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAgeSeconds}`);
+// 登录接口限速：15 分钟内最多 10 次
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: '尝试次数过多，请 15 分钟后再试' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+// API 写操作限速：每分钟 60 次
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+/* ---------------- 管理端鉴权（JWT + bcrypt） ---------------- */
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Ifiwant0';
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+const TOKEN_MAX_AGE = 30 * 24 * 60 * 60; // 30 天
+
+// 首次启动时若密码文件不存在，用默认密码生成哈希
+const PWD_FILE = path.join(DATA_DIR, '.pwdhash');
+let passwordHash;
+function ensurePassword() {
+  if (fs.existsSync(PWD_FILE)) {
+    passwordHash = fs.readFileSync(PWD_FILE, 'utf8').trim();
+  } else {
+    passwordHash = bcrypt.hashSync(ADMIN_PASSWORD, 10);
+    fs.writeFileSync(PWD_FILE, passwordHash);
+  }
 }
-function clearCookie(res, name) {
-  res.setHeader('Set-Cookie', `${name}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`);
+
+function signToken() {
+  return jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: TOKEN_MAX_AGE + 's' });
 }
-function getToken(req) {
-  const c = req.headers.cookie || '';
-  return (c.match(/(?:^|;\s*)wb_token=([^;]+)/) || [])[1] || null;
+function verifyToken(req) {
+  const token = req.cookies && req.cookies.wb_token;
+  if (!token) return false;
+  try { jwt.verify(token, JWT_SECRET); return true; }
+  catch (_) { return false; }
 }
-function isAuthed(req) {
-  const t = getToken(req);
-  return !!(t && sessions.has(t));
+function setAuthCookie(res, token) {
+  res.cookie('wb_token', token, {
+    httpOnly: true, path: '/', sameSite: 'lax',
+    maxAge: TOKEN_MAX_AGE * 1000
+  });
 }
+function clearAuthCookie(res) {
+  res.clearCookie('wb_token', { httpOnly: true, path: '/', sameSite: 'lax' });
+}
+function isAuthed(req) { return verifyToken(req); }
 function requireAuth(req, res, next) {
   if (!isAuthed(req)) return res.status(401).json({ error: '未登录或登录已过期', code: 'AUTH' });
   next();
@@ -56,12 +114,13 @@ function emptyDb() {
 function ensureDirs() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
 }
 
 function loadDb() {
   ensureDirs();
+  ensurePassword();
   if (!fs.existsSync(DB_FILE)) {
-    // 首次运行：仅初始化结构，不再预填 mock 活跃度
     const seed = seedDb();
     saveDb(seed);
     return seed;
@@ -71,18 +130,40 @@ function loadDb() {
     const parsed = JSON.parse(raw);
     const base = emptyDb();
     const db = Object.assign(base, parsed);
-    // 不再自动补演示活跃度；activity 为空即保持为空（真实数据只来自手动/派生活跃）
     return db;
   } catch (e) {
-    console.error('[workboard] db.json corrupted, using empty db:', e.message);
+    console.error('[workboard] db.json corrupted, attempting backup restore:', e.message);
+    // 尝试从最近的备份恢复
+    const backups = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).sort().reverse();
+    for (const bk of backups) {
+      try {
+        const raw = fs.readFileSync(path.join(BACKUP_DIR, bk), 'utf8');
+        const db = Object.assign(emptyDb(), JSON.parse(raw));
+        console.log('[workboard] restored from backup:', bk);
+        return db;
+      } catch (_) {}
+    }
     return seedDb();
   }
 }
 
+let saveQueue = Promise.resolve();
 function saveDb(db) {
-  const tmp = DB_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-  fs.renameSync(tmp, DB_FILE);
+  // 串行化写入，加文件锁防并发
+  saveQueue = saveQueue.then(async () => {
+    let release;
+    try {
+      release = await lockfile.lock(DB_FILE, { retries: 5, retryWait: 100 });
+      const tmp = DB_FILE + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+      fs.renameSync(tmp, DB_FILE);
+    } catch (e) {
+      console.error('[workboard] saveDb failed:', e.message);
+    } finally {
+      if (release) try { release(); } catch (_) {}
+    }
+  });
+  return saveQueue;
 }
 
 function seedDb() {
@@ -226,8 +307,16 @@ function todayKey() {
 
 /* ---------------- middleware ---------------- */
 
-app.use(express.json({ limit: '1mb' }));
-app.use('/files', express.static(UPLOAD_DIR));
+// 静态资源：长缓存 + ETag
+app.use('/files', express.static(UPLOAD_DIR, { maxAge: '7d', etag: true }));
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '7d',
+  etag: true,
+  setHeaders: (res, filePath) => {
+    // HTML 不缓存，确保更新即时生效
+    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+  }
+}));
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
@@ -242,21 +331,18 @@ const upload = multer({ storage, limits: { fileSize: MAX_UPLOAD } });
 
 /* ---------------- 管理端登录 / 会话 ---------------- */
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', loginLimiter, (req, res) => {
   const { password } = req.body || {};
-  if (typeof password !== 'string' || password !== ADMIN_PASSWORD) {
+  if (typeof password !== 'string' || !bcrypt.compareSync(password, passwordHash)) {
     return res.status(401).json({ error: '密码错误' });
   }
-  const token = crypto.randomBytes(24).toString('hex');
-  sessions.set(token, { createdAt: Date.now() });
-  setCookie(res, 'wb_token', token, 60 * 60 * 24 * 30);
+  const token = signToken();
+  setAuthCookie(res, token);
   res.json({ ok: true });
 });
 
 app.post('/api/logout', (req, res) => {
-  const t = getToken(req);
-  if (t) sessions.delete(t);
-  clearCookie(res, 'wb_token');
+  clearAuthCookie(res);
   res.json({ ok: true });
 });
 
@@ -695,7 +781,6 @@ app.get('/api/stats', (req, res) => {
 
 /* ---------------- Static + spa fallback ---------------- */
 
-app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/') || req.path.startsWith('/files/')) return next();
   const page = (req.path === '/manage' || req.path.startsWith('/manage/')) ? 'manage.html' : 'index.html';
@@ -703,6 +788,14 @@ app.get('*', (req, res, next) => {
 });
 
 /* ---------------- error handling ---------------- */
+
+// 全局未捕获异常
+process.on('unhandledRejection', (reason) => {
+  console.error('[workboard] Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[workboard] Uncaught Exception:', err);
+});
 
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
@@ -712,6 +805,31 @@ app.use((err, req, res, next) => {
   console.error('[workboard] error:', err.message);
   res.status(500).json({ error: '服务器内部错误' });
 });
+
+/* ---------------- 定时备份 ---------------- */
+function makeBackup() {
+  try {
+    if (!fs.existsSync(DB_FILE)) return;
+    const ts = dateKey(new Date());
+    const bkPath = path.join(BACKUP_DIR, `db-${ts}.json`);
+    fs.copyFileSync(DB_FILE, bkPath);
+    // 只保留最近 30 个备份
+    const files = fs.readdirSync(BACKUP_DIR).filter(f => f.startsWith('db-') && f.endsWith('.json')).sort();
+    if (files.length > 30) {
+      files.slice(0, files.length - 30).forEach(f => {
+        try { fs.unlinkSync(path.join(BACKUP_DIR, f)); } catch (_) {}
+      });
+    }
+  } catch (e) {
+    console.error('[workboard] backup failed:', e.message);
+  }
+}
+// 启动后 1 分钟做一次备份，之后每天 03:00 备份
+setTimeout(makeBackup, 60 * 1000);
+setInterval(() => {
+  const now = new Date();
+  if (now.getHours() === 3 && now.getMinutes() < 5) makeBackup();
+}, 5 * 60 * 1000);
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[workboard] listening on http://0.0.0.0:${PORT}`);

@@ -12,7 +12,13 @@
     "node": ">=18"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
     "express": "^4.19.2",
-    "multer": "^2.0.1"
+    "express-rate-limit": "^8.6.2",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.0.1",
+    "proper-lockfile": "^4.1.2"
   }
 }

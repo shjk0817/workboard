@@ -550,6 +550,97 @@ function statusClass(s) {
   return { bg: 'var(--bg)', fg: '#475569' };
 }
 
+/* ---------- 项目进度趋势图 ---------- */
+let trendChart = null;
+function renderTrendChart() {
+  const canvas = $('#trendChart');
+  if (!canvas || PAGE !== 'show') return;
+  const $empty = $('#trendEmpty');
+  if (!$empty) return;
+
+  // 收集所有有进展日志的项目
+  const projectData = state.projects
+    .map(p => {
+      const logs = (state.progressByProject && state.progressByProject[p.id]) || [];
+      return { name: p.name, logs: logs.slice().sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0) };
+    })
+    .filter(p => p.logs.length > 0);
+
+  if (projectData.length === 0) {
+    $empty.classList.remove('hidden');
+    if (trendChart) { trendChart.destroy(); trendChart = null; }
+    return;
+  }
+  $empty.classList.add('hidden');
+
+  // 收集所有日期
+  const allDates = new Set();
+  projectData.forEach(p => p.logs.forEach(l => allDates.add(l.date)));
+  const sortedDates = [...allDates].sort();
+
+  const colors = ['#2563eb', '#3b82f6', '#60a5fa', '#1d4ed8', '#93c5fd', '#1e40af', '#2563eb', '#3b82f6'];
+  const datasets = projectData.map((p, i) => {
+    const color = colors[i % colors.length];
+    // 为每个日期找到最近的进度值（前向填充）
+    const data = sortedDates.map(date => {
+      let val = null;
+      for (const l of p.logs) {
+        if (l.date <= date) val = l.progress;
+      }
+      return val;
+    });
+    return {
+      label: p.name,
+      data,
+      borderColor: color,
+      backgroundColor: color + '20',
+      borderWidth: 2,
+      pointRadius: 3,
+      pointHoverRadius: 6,
+      tension: 0.3,
+      fill: false,
+      spanGaps: true
+    };
+  });
+
+  if (trendChart) trendChart.destroy();
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? '#334155' : '#e2e8f0';
+  const textColor = isDark ? '#94a3b8' : '#64748b';
+
+  trendChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels: sortedDates, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: textColor, usePointStyle: true, padding: 20, font: { size: 12 } }
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y ?? '—'}%`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: textColor, maxTicksLimit: 12, font: { size: 10 } },
+          grid: { color: gridColor }
+        },
+        y: {
+          min: 0, max: 100,
+          ticks: { color: textColor, callback: (v) => v + '%', font: { size: 11 } },
+          grid: { color: gridColor }
+        }
+      }
+    }
+  });
+}
+
 /* ---------- files ---------- */
 function renderFiles() {
   const list = $('#filesList');
@@ -607,6 +698,7 @@ function renderAll() {
   renderArrangements();
   renderProjects();
   renderFiles();
+  renderTrendChart();
   renderFileSelect();
   applySearchFilter();
 }
@@ -1121,6 +1213,7 @@ function toggleTheme() {
   document.documentElement.setAttribute('data-theme', next);
   localStorage.setItem('theme', next);
   updateThemeIcon(next);
+  renderTrendChart();
 }
 function updateThemeIcon(theme) {
   const btn = $('#themeToggle');
